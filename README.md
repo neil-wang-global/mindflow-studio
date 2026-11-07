@@ -2,6 +2,10 @@
 
 **把 [MindFlow](https://github.com/neil-wang-global/MindFlow) 的 Runtime Root 变成一个可操作的工作台。**
 
+> 相关仓库
+> - [MindFlow](https://github.com/neil-wang-global/MindFlow) —— 协议本体（Studio 只读它，不写它）
+> - [neil-skills /mindflow](https://github.com/neil-wang-global/neil-skills/blob/main/skills/mindflow/SKILL.md) —— 在任意目录跑一遍完整的 MindFlow 流程
+
 一个 DSH（DeepSeek Harness）Web 插件：看任务跑到哪一步、新建任务、维护 Soul、浏览知识与能力。
 
 > 不需要重启也能用命令行读数据 —— 但面板本身需要 DSH 重启后才会出现。
@@ -123,6 +127,20 @@ watcher 只当"触发器"用：收到事件就重读文件，所以漏一个事�
 
 `SYSTEM.md §Runtime Roles` 的层级：
 `Task`（入口，`tasks/{task-id}/`）→ `Plan`（`plan.md`）→ `Step` → `Capability`。
+
+## 和另外两个仓库的关系
+
+```
+MindFlow（协议）          ← Studio 只读协议树的 SYSTEM.md / 模块 README
+  ├── /mindflow 技能      ← 在任意目录跑完整流程（同步仓库、Soul、Recovery、主流程）
+  └── MindFlow Studio     ← 这个插件：看进度、聊任务、看产物、改 Soul、看知识能力
+```
+
+- **协议**决定「怎么跑」：Studio 不重新实现任何规则，全部以同步下来的 `SYSTEM.md` 为准
+- **技能**决定「谁去跑」：一个 DSH 会话执行 `/mindflow <task>`
+- **Studio** 决定「你怎么看」：读同一个 Runtime Root，经会话通道下指令
+
+所以三者不重复：去掉技能，Studio 就没有东西可跑；去掉 Studio，技能照样在终端里工作。
 
 ## License
 
