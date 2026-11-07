@@ -1,0 +1,4 @@
+# Bundle layer: inserts the plugin's own row into the web roster.
+- insert:
+    - id: mindflow-studio
+      name: 'mindflow-studio'

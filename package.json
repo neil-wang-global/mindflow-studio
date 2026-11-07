@@ -1,0 +1,53 @@
+{
+  "name": "mindflow-studio",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "MindFlow Studio: a workbench for MindFlow runtime roots (tasks, live phase progress, knowledge and capability views, Soul editing). DSH web-profile plugin.",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js"
+  },
+  "files": [
+    "lib/",
+    "src/",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "react": "^19.0.0",
+    "react-test-renderer": "^19.0.0"
+  },
+  "scripts": {
+    "build:client": "node scripts/bundle-client.mjs",
+    "prepare": "npm run build",
+    "test": "npm run build && node test/run-all.mjs",
+    "build:host": "node scripts/build-host.mjs",
+    "build": "npm run build:host && npm run build:client"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "mindflow",
+    "knowledge-workbench"
+  ],
+  "license": "MIT",
+  "author": "Neil Wang"
+}
