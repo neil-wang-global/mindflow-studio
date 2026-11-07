@@ -146,6 +146,16 @@ learning-read → recognition → analysis → planning
 | P4 Soul 表单编辑 | ✅ |
 | P4 文件监视推送（SSE） | ✅ 带轮询兜底 |
 | **新增：Plan 展示** | ✅ 解析 plan.md 的 Step |
+| **新增：技能检测与一键安装** | ✅ 检测 `~/.dsh/skills`，按需 clone + 符号链接 |
+
+### Studio 与 Skill 的边界
+
+Studio 不内置技能副本（两份 SKILL.md 必然不同步），而是**检测 + 由用户点按钮安装**：
+
+- 检测 `~/.dsh/skills/mindflow` 与 `~/.agents/skills/mindflow`，跟随符号链接判断 `SKILL.md` 可达
+- 安装 = 浅 clone 到 `~/.mindflow/studio/skills/neil-skills` + 链进技能根
+- **不由 Studio 自动安装**：一个静默写技能目录的插件，用户没法看见也没法归因
+- 已验证：技能目录是实时扫描的，装完立即出现在 skill 列表里，无需重启
 
 ### Task 与 Plan 的层级（核对协议后的结论）
 

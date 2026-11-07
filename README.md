@@ -57,22 +57,9 @@ Studio 把这些文件读成界面：阶段条、步骤状态、产物列表、�
 
 ## 快速开始
 
-三步，五分钟。把 `<profile>` 换成你的 profile 名（`web`、`desktop` 等）。
+两步。
 
-### 1. 先让 MindFlow 能跑
-
-Studio 是 MindFlow 的观察窗口，它不自己创建运行态。所以先装技能并跑一次：
-
-```bash
-claude plugin marketplace add neil-wang-global/neil-skills
-claude plugin install neil-skills@neil-skills
-```
-
-然后在任意目录执行一次 `/mindflow <随便一个任务>`。这一步会 clone 协议到
-`~/.mindflow/MindFlow`、初始化 Runtime Root、并和你一起填好 Soul。
-**跳过这步 Studio 会显示「没有运行态」。**
-
-### 2. 安装 Studio
+### 1. 装 Studio
 
 ```bash
 git clone https://github.com/neil-wang-global/mindflow-studio.git
@@ -81,30 +68,41 @@ npm install
 dsh plugin --profile <profile> add link:$PWD
 ```
 
-`add` 一步就够了：它会把包装进 profile，并**自动把这个包登记为 profile 的 bundle**
-（因为 `package.json` 里声明了 `dsh.bundle`）。不需要再 `install`，也不需要手工改配置。
+`add` 一步到位：装包 + 自动登记为 profile 的 bundle（因为 `package.json` 声明了 `dsh.bundle`）。
+把 `<profile>` 换成 `web`、`desktop` 之类。
 
-### 3. 重启并确认
-
-```bash
-dsh web        # 或你的 profile 名
-```
-
-侧边栏的「全局面板」区域会出现 **MindFlow Studio**，点开就是工作台。
-
-**确认安装成功**（可选）：
+### 2. 重启，然后点一下按钮
 
 ```bash
-curl http://127.0.0.1:3080/mindflow/runtime
+dsh web
 ```
 
-返回 JSON 就说明 host 侧已挂载；还是 404 说明要么没重启，要么 bundle 没登记。
+侧边栏会出现 **MindFlow Studio**。打开后如果 `/mindflow` 技能还没装，面板顶部会有提示和
+**「Install skill」** 按钮——点它就行，Studio 会 clone 技能仓库并链进技能目录，
+**装完立即生效，不用再重启**。
+
+点「Install skill」之后，再跑第一个任务时会问你几个 Soul 问题（这是设一次、以后一直生效的
+约束层），答完就开始跑。
 
 ### 卸载
 
 ```bash
 dsh plugin --profile <profile> remove mindflow-studio
 ```
+
+技能独立存在，卸载 Studio 不影响它；想单独卸技能就删掉 `~/.dsh/skills/mindflow` 这个链接。
+
+## 为什么技能是分开的
+
+**Studio 是观察窗口，技能是干活的手。** 分工是清楚的：
+
+| | 负责什么 | 能独立用吗 |
+|---|---|---|
+| `/mindflow` 技能 | 在任意目录跑完整流程 | 能，纯终端就能用 |
+| MindFlow Studio | 看进度、聊任务、看产物、改 Soul | 不能，它把任务交给技能去跑 |
+
+所以 Studio **不内置**一份技能副本（那样两份 SKILL.md 迟早不同步），
+而是检测 + 一键安装。装不装、什么时候装，由你点那个按钮决定，Studio 不会自己动手。
 
 ## 它读哪个目录
 

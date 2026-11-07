@@ -14,6 +14,7 @@ import { sessionFor } from './sessions.js'
 import { createTaskLauncher, createInterjector } from './task-launcher.js'
 import { watchRuntime } from './watch.js'
 import { readPlan } from './plan.js'
+import { skillStatus, installSkill } from './skill.js'
 
 export const name = 'mindflow-studio'
 export const inject = ['webServer', 'agents']
@@ -78,6 +79,9 @@ export function apply(ctx, config = {}) {
 
     'GET knowledge': (q) => listKnowledge(root().root, q.scope || 'approved'),
     'GET capabilities': () => listCapabilities(root().root),
+
+    'GET skill': () => ({ ok: true, ...skillStatus() }),
+    'POST skill.install': () => installSkill(),
 
     'POST task.create': (q, body) => launch(body),
     'POST task.interject': (q, body) => interject(body),

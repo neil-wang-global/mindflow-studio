@@ -40,6 +40,8 @@ const TASKS = {
     live: { sessionId: 'sess-1', known: true, alive: true, status: 'running' },
   }],
 }
+const SKILL = { ok: true, installed: true, path: '/fake/skills/mindflow', canInstall: false }
+
 const PLAN = {
   ok: true,
   exists: true,
@@ -50,6 +52,7 @@ const PLAN = {
 
 globalThis.fetch = async (url) => {
   const path = String(url).split('?')[0]
+  if (path.endsWith('/mindflow/skill')) return { ok: true, json: async () => SKILL }
   return { ok: true, json: async () => (path.endsWith('/mindflow/plan') ? PLAN : TASKS) }
 }
 

@@ -633,6 +633,50 @@ window.__ModuleLoader__.load({
       )
     }
 
+    // ── skill readiness ────────────────────────────────────────────────────
+
+    /**
+     * Every task is started by prompting `/mindflow` into a DSH session, so an
+     * absent skill turns "new task" into a run that goes nowhere. Say it before
+     * the user hits the button rather than after.
+     */
+    function SkillBanner({ status, onInstall, busy, error, note }) {
+      if (!status) return null
+      if (status.installed) {
+        return h(
+          'div',
+          { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', borderBottom: '1px solid var(--border-default, #e4e4e7)', fontSize: 11.5, color: 'var(--text-secondary, #71717a)' } },
+          badge('mindflow skill', 'done'),
+          h('span', null, status.path),
+        )
+      }
+
+      return h(
+        'div',
+        {
+          style: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            flexWrap: 'wrap',
+            padding: '10px 16px',
+            borderBottom: '1px solid var(--border-default, #e4e4e7)',
+            background: 'var(--warning-subtle, #fffbeb)',
+            fontSize: 12,
+          },
+        },
+        h('span', { style: { flex: 1, minWidth: 220, lineHeight: 1.55 } },
+          h('strong', null, 'The /mindflow skill is not installed. '),
+          'Tasks are run by prompting that skill, so nothing will start until it exists. Installing clones it and links it into your skill directory.',
+        ),
+        busy
+          ? h('span', { style: { fontSize: 11.5, color: 'var(--text-secondary, #71717a)' } }, 'Installing…')
+          : h(Btn, { onClick: onInstall, disabled: !status.canInstall, tone: 'primary' }, status.canInstall ? 'Install skill' : 'No writable skill directory'),
+        error ? h('span', { style: { width: '100%', fontSize: 11.5, color: 'var(--danger-strong, #b91c1c)' } }, error) : null,
+        note ? h('span', { style: { width: '100%', fontSize: 11.5, color: 'var(--success-strong, #15803d)' } }, note) : null,
+      )
+    }
+
     // ── New task form ──────────────────────────────────────────────────────
 
     const TASK_TYPES = [
@@ -1041,6 +1085,10 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(null)
       const [loading, setLoading] = React.useState(true)
       const [reloadKey, setReloadKey] = React.useState(0)
+      const [skill, setSkill] = React.useState(null)
+      const [installing, setInstalling] = React.useState(false)
+      const [installError, setInstallError] = React.useState(null)
+      const [installNote, setInstallNote] = React.useState(null)
 
       React.useEffect(() => {
         let cancelled = false
@@ -1104,6 +1152,37 @@ window.__ModuleLoader__.load({
           if (poll !== null) window.clearInterval(poll)
         }
       }, [reloadKey])
+
+      const loadSkill = React.useCallback(() => {
+        getJson('skill')
+          .then((res) => setSkill(res))
+          .catch(() => {
+            /* the banner is advisory; a failure here must not blank the panel */
+          })
+      }, [])
+
+      React.useEffect(() => {
+        loadSkill()
+      }, [loadSkill, reloadKey])
+
+      const installSkill = React.useCallback(async () => {
+        setInstalling(true)
+        setInstallError(null)
+        setInstallNote(null)
+        try {
+          const res = await postJson('skill.install', {})
+          if (res.ok) {
+            setInstallNote(res.alreadyInstalled ? 'Already installed.' : 'Installed. The skill is available now — no restart needed.')
+            loadSkill()
+          } else {
+            setInstallError(res.error || 'installation failed')
+          }
+        } catch (err) {
+          setInstallError(String(err.message || err))
+        } finally {
+          setInstalling(false)
+        }
+      }, [loadSkill])
 
       const current = tasks.find((t) => t.taskId === selected) || (tasks.length > 0 ? tasks[0] : null)
 
@@ -1214,7 +1293,12 @@ window.__ModuleLoader__.load({
             runtime ? runtime.root : '',
           ),
         ),
-        h('div', { style: S.main }, body),
+        h(
+          'div',
+          { style: S.main },
+          h(SkillBanner, { status: skill, onInstall: installSkill, busy: installing, error: installError, note: installNote }),
+          body,
+        ),
       )
     }
 

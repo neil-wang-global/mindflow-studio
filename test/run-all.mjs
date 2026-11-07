@@ -16,6 +16,7 @@ const suites = [
   'soul.mjs',
   'launcher.mjs',
   'watch.mjs',
+  'skill.mjs',
   'markdown.mjs',
   'render-tasks.mjs',
   'render-liveness.mjs',
