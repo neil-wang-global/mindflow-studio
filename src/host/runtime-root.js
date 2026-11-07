@@ -112,6 +112,20 @@ export function listTasks(root) {
   return listTaskDirs(root).map((d) => readTask(root, d.name))
 }
 
+/**
+ * A task id is a single directory name, never a path.
+ *
+ * `path.join(root, 'tasks', taskId)` happily accepts `../../etc`, which would put
+ * the base directory outside the runtime entirely — the containment check that
+ * only compares against that base would then happily agree. Rejecting anything
+ * that is not a plain name closes that hole at the one place all readers share.
+ */
+export function isValidTaskId(taskId) {
+  if (typeof taskId !== 'string' || taskId.length === 0) return false
+  if (taskId === '.' || taskId === '..') return false
+  return !/[\\/\0]/.test(taskId)
+}
+
 /** Refuse to ship a huge file to the browser; the panel can still show its size. */
 const MAX_ARTIFACT_BYTES = 512 * 1024
 
@@ -123,6 +137,8 @@ const MAX_ARTIFACT_BYTES = 512 * 1024
  * renderer instead of guessing from the text.
  */
 export function readArtifact(root, taskId, relPath) {
+  if (!isValidTaskId(taskId)) return { ok: false, error: 'invalid task id' }
+  if (typeof relPath !== 'string' || relPath.length === 0) return { ok: false, error: 'invalid artifact path' }
   const base = path.join(root, 'tasks', taskId)
   const abs = path.resolve(base, relPath)
   if (abs !== base && !abs.startsWith(base + path.sep)) return { ok: false, error: 'path escapes task directory' }

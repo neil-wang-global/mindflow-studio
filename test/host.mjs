@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert/strict'
-import { resolveRuntimeRoot, runtimeInfo, listTasks, readTask, readArtifact } from '../src/host/runtime-root.js'
+import { resolveRuntimeRoot, runtimeInfo, listTasks, readTask, readArtifact, isValidTaskId } from '../src/host/runtime-root.js'
 
 let n = 0
 const check = (label, fn) => {
@@ -110,6 +110,26 @@ check('runtimeInfo reports absence instead of throwing', () => {
   assert.equal(info.source, 'env')
   if (saved === undefined) delete process.env.MINDFLOW_RUNTIME_ROOT
   else process.env.MINDFLOW_RUNTIME_ROOT = saved
+})
+
+check('a task id must be a single directory name', () => {
+  for (const bad of ['../etc', '../../x', 'a/b', 'a\\b', '', '.', '..', null, undefined, 42]) {
+    assert.equal(isValidTaskId(bad), false, `must reject ${JSON.stringify(bad)}`)
+  }
+  for (const good of ['20261107-demo', 't1', 'a-b_c.d']) {
+    assert.equal(isValidTaskId(good), true, `must accept ${good}`)
+  }
+})
+
+check('a traversing task id cannot read outside the runtime', () => {
+  const { root } = makeRuntime()
+  // Without the task-id guard this resolves to a base outside `tasks/`, and the
+  // containment check that only compares against that base would agree.
+  for (const evil of ['../..', '../../../../etc', 'a/../../..']) {
+    const r = readArtifact(root, evil, 'passwd')
+    assert.equal(r.ok, false, `must refuse task id ${evil}`)
+  }
+  fs.rmSync(root, { recursive: true, force: true })
 })
 
 console.log(`host: ${n} checks passed`)

@@ -52,18 +52,20 @@ function restoreInline(el, saved) {
   el.removeAttribute(HOST_ROOT_ATTR)
 }
 
-const dockState = {
-  el: null,
-  saved: null,
-}
+/**
+ * Original inline styles per docked element.
+ *
+ * Keyed by element rather than held as a single "last docked" pair: two panels
+ * can be mounted at once (two workspaces, or a remount racing an unmount), and a
+ * single slot would let the second dock restore the first element's styles and
+ * leave the host conversation at the wrong position. A WeakMap lets an
+ * unmounted element be collected without an explicit cleanup.
+ */
+const dockedStyles = new WeakMap()
 
 function dockTo(el, rect) {
   if (!el || !rect || rect.width < 1 || rect.height < 1) return
-  if (dockState.el !== el) {
-    if (dockState.el && dockState.saved) restoreInline(dockState.el, dockState.saved)
-    dockState.el = el
-    dockState.saved = captureInline(el)
-  }
+  if (!dockedStyles.has(el)) dockedStyles.set(el, captureInline(el))
   el.setAttribute(HOST_ROOT_ATTR, '')
   el.style.boxSizing = 'border-box'
   el.style.position = 'fixed'
@@ -79,10 +81,31 @@ function dockTo(el, rect) {
   el.style.visibility = 'visible'
 }
 
-export function undockConversation() {
-  if (dockState.el && dockState.saved) restoreInline(dockState.el, dockState.saved)
-  dockState.el = null
-  dockState.saved = null
+/**
+ * Restore one docked element, or every docked element when called without one.
+ *
+ * The panel passes its own element so a closing panel can never un-dock the
+ * conversation a still-open panel is showing.
+ */
+export function undockConversation(el = null) {
+  if (el) {
+    const saved = dockedStyles.get(el)
+    if (saved) {
+      restoreInline(el, saved)
+      dockedStyles.delete(el)
+    }
+    return
+  }
+  // fallback: nothing tracks a full registry, so look for what we marked
+  if (typeof document !== 'undefined') {
+    for (const node of document.querySelectorAll(`[${HOST_ROOT_ATTR}]`)) {
+      const saved = dockedStyles.get(node)
+      if (saved) {
+        restoreInline(node, saved)
+        dockedStyles.delete(node)
+      }
+    }
+  }
 }
 
 /** Ask the host to show a session. Missing APIs are skipped, not thrown at. */
@@ -129,6 +152,8 @@ export function restoreSelection(sessions, saved) {
 export function createNativeSeat(React, h) {
   return function NativeSeat({ sessions, sessionId, active }) {
     const seatRef = React.useRef(null)
+    // which host element this seat is currently docking
+    const dockedRef = React.useRef(null)
 
     // remember the user's own selection once, so closing restores it
     const savedRef = React.useRef(null)
@@ -149,7 +174,8 @@ export function createNativeSeat(React, h) {
 
     React.useLayoutEffect(() => {
       if (!active || !sessionId) {
-        undockConversation()
+        undockConversation(dockedRef.current)
+        dockedRef.current = null
         return undefined
       }
 
@@ -162,6 +188,7 @@ export function createNativeSeat(React, h) {
         if (cancelled || !seatRef.current) return
         const root = findConversationRoot()
         if (!root) return
+        dockedRef.current = root
         dockTo(root, seatRef.current.getBoundingClientRect())
       }
 
@@ -206,7 +233,9 @@ export function createNativeSeat(React, h) {
         if (mo) mo.disconnect()
         window.removeEventListener('scroll', schedule, true)
         window.removeEventListener('resize', schedule)
-        undockConversation()
+        // only the element this seat docked; another open panel keeps its own
+        undockConversation(dockedRef.current)
+        dockedRef.current = null
       }
     }, [active, sessionId])
 

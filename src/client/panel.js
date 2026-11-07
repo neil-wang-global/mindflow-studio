@@ -432,11 +432,6 @@ window.__ModuleLoader__.load({
     function TaskDetail({ task, sessionId }) {
       const [tab, setTab] = React.useState('plan')
       const [artifact, setArtifact] = React.useState(null)
-      const [sessions] = React.useState(() => {
-        // the host service is only reachable through the plugin context, which the
-        // panel receives later; resolved lazily in the seat
-        return null
-      })
 
       if (!task) {
         return h('div', { style: S.empty }, 'Select a task on the left, or create one to start a MindFlow run.')
@@ -573,7 +568,7 @@ window.__ModuleLoader__.load({
                   { style: { padding: 16, fontSize: 12, color: 'var(--text-secondary, #71717a)', lineHeight: 1.7 } },
                   'This task has no bound session yet. Start it from New task, or run /mindflow for it.',
                 )
-              : h(NativeSeat, { sessions, sessionId, active: true }),
+              : h(NativeSeat, { sessions: host.sessions, sessionId, active: true }),
           ),
         ),
       )

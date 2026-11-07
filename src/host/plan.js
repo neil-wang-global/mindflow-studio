@@ -13,6 +13,7 @@
  */
 
 import fs from 'node:fs'
+import { isValidTaskId } from './runtime-root.js'
 
 const STEP_HEADING = /^###\s+Step\s+(\d+)\s*$/i
 
@@ -117,6 +118,8 @@ function parseStepLines(lines) {
  * Recognition), so it is reported as `exists: false` rather than an error.
  */
 export function readPlan(root, taskId) {
+  // same containment concern as artifact reads: a task id is one directory name
+  if (!isValidTaskId(taskId)) return { ok: false, error: 'invalid task id' }
   const file = `${root}/tasks/${taskId}/plan.md`
   let text
   try {
