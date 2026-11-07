@@ -55,39 +55,85 @@ Studio 把这些文件读成界面：阶段条、步骤状态、产物列表、�
 - **Knowledge** —— 按协议已有的 `Type`（concept / method / domain / self）分组，可切 approved / drafts / archived
 - **Capabilities** —— 按「有无待处理变更（`cu-*.md`）」与「已定义」分组
 
-## 安装
+## 快速开始
+
+三步，五分钟。把 `<profile>` 换成你的 profile 名（`web`、`desktop` 等）。
+
+### 1. 先让 MindFlow 能跑
+
+Studio 是 MindFlow 的观察窗口，它不自己创建运行态。所以先装技能并跑一次：
 
 ```bash
-cd /Users/neil/Workspace/mine_craft/mindflow-studio
-npm install
-npm run build:client
-
-dsh plugin --profile web add link:$PWD
-dsh plugin --profile web install
-# 重启 dsh web 后，侧边栏出现 MindFlow Studio
+claude plugin marketplace add neil-wang-global/neil-skills
+claude plugin install neil-skills@neil-skills
 ```
 
-## 前提
+然后在任意目录执行一次 `/mindflow <随便一个任务>`。这一步会 clone 协议到
+`~/.mindflow/MindFlow`、初始化 Runtime Root、并和你一起填好 Soul。
+**跳过这步 Studio 会显示「没有运行态」。**
 
-- MindFlow 协议已 clone 到 `~/.mindflow/MindFlow`（跑一次 `/mindflow` 即可）
-- Runtime Root 已初始化（技能第一次运行时会从 `templates/` 复制）
+### 2. 安装 Studio
 
-Runtime Root 解析顺序与 MindFlow 一致：
-`MINDFLOW_RUNTIME_ROOT` → `<protocolRoot>/runtime/` → 调用方显式路径。
+```bash
+git clone https://github.com/neil-wang-global/mindflow-studio.git
+cd mindflow-studio
+npm install
+dsh plugin --profile <profile> add link:$PWD
+```
+
+`add` 一步就够了：它会把包装进 profile，并**自动把这个包登记为 profile 的 bundle**
+（因为 `package.json` 里声明了 `dsh.bundle`）。不需要再 `install`，也不需要手工改配置。
+
+### 3. 重启并确认
+
+```bash
+dsh web        # 或你的 profile 名
+```
+
+侧边栏的「全局面板」区域会出现 **MindFlow Studio**，点开就是工作台。
+
+**确认安装成功**（可选）：
+
+```bash
+curl http://127.0.0.1:3080/mindflow/runtime
+```
+
+返回 JSON 就说明 host 侧已挂载；还是 404 说明要么没重启，要么 bundle 没登记。
+
+### 卸载
+
+```bash
+dsh plugin --profile <profile> remove mindflow-studio
+```
+
+## 它读哪个目录
+
+Studio 不猜路径，解析顺序和 MindFlow 协议完全一致：
+
+1. 环境变量 `MINDFLOW_RUNTIME_ROOT`
+2. `<协议仓库>/runtime/`（默认，即 `~/.mindflow/MindFlow/runtime`）
+3. 调用方显式指定
+
+想「一个项目一个运行态」，就给不同项目设不同的 `MINDFLOW_RUNTIME_ROOT`，
+Studio 会跟着切。每个任务解析出的实际路径记录在它的 `state.md §Runtime Root` 里。
 
 ## 开发
 
 ```bash
-npm run build:client   # 把 src/client/panel.js 建成 lib/client.js
-npm test               # 7 个套件：解析、host、Soul、表单、三个渲染测试
+npm run build          # 生成 lib/index.js（host）与 lib/client.js（面板）
+npm test               # 构建 + 10 个套件
 ```
 
-测试里值得注意的两点：
+`lib/` 下两个入口都是**构建产物**，改了 `src/` 必须重新 build——手写的入口曾经
+因为 import 路径指向错误目录，导致 DSH 静默跳过整个插件（没报错、没面板、路由全 404）。
+现在 `build-host.mjs` 会逐条校验 import 能否解析，路径错了构建直接失败。
 
-- `render-liveness.mjs` 专门锁住 **stalled 判定** —— 文件说 running 但 agent 已死时必须显示 Stalled。
-  这个 bug 在开发时真实出现过（`live` 参数没传下去），现在有回归保护。
-- `parse-state.mjs` 锁住两个真实修过的 bug：`running` 被误当模板占位符、
-  `learning-acquire` 不在主序列导致阶段条全灰。
+测试锁住的真实 bug：
+
+- `render-liveness.mjs` —— **stalled 判定**：文件说 running 但 agent 已死时必须显示 Stalled
+- `parse-state.mjs` —— `running` 被误当模板占位符、`learning-acquire` 导致阶段条全灰
+- `host.mjs` —— **路径穿越**：`taskId=../../../etc` 曾能读到运行态之外的文件
+- `markdown.mjs` —— XSS：产物里的 `<script>` 必须当文本、`javascript:` 链接不成为锚点
 
 ## 结构
 
