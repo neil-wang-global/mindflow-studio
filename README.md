@@ -1,65 +1,52 @@
 # MindFlow Studio
 
-**把 [MindFlow](https://github.com/neil-wang-global/MindFlow) 的 Runtime Root 变成一个可操作的工作台。**
+**MindFlow 的可视化工作台。**
 
-> 相关仓库
-> - [MindFlow](https://github.com/neil-wang-global/MindFlow) —— 协议本体（Studio 只读它，不写它）
-> - [neil-skills /mindflow](https://github.com/neil-wang-global/neil-skills/blob/main/skills/mindflow/SKILL.md) —— 在任意目录跑一遍完整的 MindFlow 流程
+[MindFlow](https://github.com/neil-wang-global/MindFlow) 是一个让 AI 按固定流程做事、并把学到的东西沉淀下来的系统。它跑起来以后，你会有一堆任务、一批沉淀下来的知识，以及一个定义"什么叫做好"的准则。
 
-一个 DSH（DeepSeek Harness）Web 插件：看任务跑到哪一步、新建任务、维护 Soul、浏览知识与能力。
+这些都在文件里，看得见但不好看。
 
-> 不需要重启也能用命令行读数据 —— 但面板本身需要 DSH 重启后才会出现。
+MindFlow Studio 把它们摆成一个界面：任务跑到哪一步、正在聊什么、产出了什么、攒下了什么。
 
 ---
 
-## 它解决什么
+## 你会得到什么
 
-MindFlow 把状态存在一堆 Markdown 文件里（`state.md`、`kb-*.md`、`cap-*.md`），
-好处是你能随时手工改；代价是**不看文件就不知道任务跑到哪了**。
+装好之后，侧边栏多一个入口，点开是一个工作台。它回答四个问题：
 
-Studio 把这些文件读成界面：阶段条、步骤状态、产物列表、知识库分类、能力清单。
-并且它不会替你编造状态 —— 文件里没有的，界面也不假装有。
+**「我的任务跑到哪了？」**
 
-## 四条设计约束
+每个任务一条进度，当前走到哪一步一眼可见：
 
-| 约束 | 为什么 |
-|---|---|
-| **状态只读文件，不推导** | 阶段 = `state.md §Current Phase`，不另造状态机 |
-| **运行中判定以 agent 注册表为准** | `state.md` 停在 `running` 但进程已死 → 显示 **Stalled**，不假装在跑 |
-| **只有 Soul 可编辑** | 知识库有 `INDEX.md` 与 `kb-*.md` 的一致性契约，直接改容易破坏 |
-| **任务经 DSH 会话执行** | 起一个会话跑 `/mindflow <task>`，协议只有一份实现 |
+> 学习 → 识别 → 分析 → 规划 → 执行 → 反省 → 学习
 
-## 面板
+正在跑的任务会显示实时进度。如果一个任务中途挂了，它会明确显示**已停滞**，而不是一直挂着"运行中"骗你。
 
-```
-┌────────────┬──────────────────────────────────────┐
-│ MindFlow   │ task-id                  [Running]   │
-│ Studio     │ L(Read) ▶ Recog ▶ Anal ▶ Exec ▶ …   │
-│            │──────────────────────────────────────│
-│ Tasks      │ Runtime Root / Current Step / …      │
-│ New task   │──────────────────────────────────────│
-│ Soul       │ Steps   Step 1: completed …          │
-│ Knowledge  │ Artifacts  _output/report.md         │
-│ Capabilit. │                                      │
-│            │                                      │
-│ ─────────  │                                      │
-│ 任务列表    │                                      │
-│ 2026..demo │                                      │
-│  [Running] │                                      │
-└────────────┴──────────────────────────────────────┘
-```
+**「我想问问它。」**
 
-- **Tasks** —— 左侧任务列表，右侧详情：信息条、阶段条、步骤、产物
-- **New task** —— 轻量表单（Goal / 类型 / 素材 / 产出 / 约束），提交后起会话跑 `/mindflow`
-- **Soul** —— 八个字段逐项编辑，直接写 `{runtime}/mind/soul/core.md`
-- **Knowledge** —— 按协议已有的 `Type`（concept / method / domain / self）分组，可切 approved / drafts / archived
-- **Capabilities** —— 按「有无待处理变更（`cu-*.md`）」与「已定义」分组
+任务详情右侧就是和这个任务的对话。你在这里提的问题，直接进到正在干活的那个会话里——不用切窗口、不用找会话。
 
-## 快速开始
+**「它写了什么？」**
 
-两步。
+任务产出的文件可以直接点开看，Markdown 会正常排版。不想翻文件夹的时候很省事。
 
-### 1. 装 Studio
+**「我攒下了什么？」**
+
+看过往积累的知识和沉淀下来的能力。这两样是只读的——它们由流程自己沉淀出来，不该被手工改乱。
+
+## 还有一件事：Soul
+
+MindFlow 里有个叫 **Soul** 的东西，是整个系统的最高准则：你是谁、你要什么、什么算好、什么绝对不做。
+
+它在所有任务上都生效，所以只需要设一次。
+
+Studio 里可以随时改这八个字段。改完立即对所有后续任务生效。
+
+---
+
+## 安装
+
+### 第一步：装上 Studio
 
 ```bash
 git clone https://github.com/neil-wang-global/mindflow-studio.git
@@ -68,123 +55,96 @@ npm install
 dsh plugin --profile <profile> add link:$PWD
 ```
 
-`add` 一步到位：装包 + 自动登记为 profile 的 bundle（因为 `package.json` 声明了 `dsh.bundle`）。
-把 `<profile>` 换成 `web`、`desktop` 之类。
+把 `<profile>` 换成你平时用的那个（`web`、`desktop` 等）。
 
-### 2. 重启，然后点一下按钮
+### 第二步：重启，点一下按钮
 
 ```bash
 dsh web
 ```
 
-侧边栏会出现 **MindFlow Studio**。打开后如果 `/mindflow` 技能还没装，面板顶部会有提示和
-**「Install skill」** 按钮——点它就行，Studio 会 clone 技能仓库并链进技能目录，
-**装完立即生效，不用再重启**。
+侧边栏出现 **MindFlow Studio**，点开。
 
-点「Install skill」之后，再跑第一个任务时会问你几个 Soul 问题（这是设一次、以后一直生效的
-约束层），答完就开始跑。
+如果这是第一次用，面板顶部会提示 `/mindflow` 还没装，旁边有一个按钮——点它。装完立刻可用，不用再重启。
 
-### 卸载
+### 然后就能用了
+
+点「新建任务」，填一个目标，交给它。
+
+第一次跑会问你几个关于 Soul 的问题——这些是设一次就一直生效的准则，认真答一遍，之后不用再管。
+
+## 为什么不把技能打包在一起
+
+Studio 只负责"看"和"指挥"，真正干活的是一个叫 `/mindflow` 的技能。
+
+分开的好处是：**那个技能你自己也能用**。在任意目录打开终端敲 `/mindflow`，不装 Studio 也能跑完整流程。Studio 只是让它变得好看好用。
+
+所以 Studio 不复制一份技能在自己里面——复制了迟早会不同步。它做的是检查有没有装，没有就帮你装上。装不装、什么时候装，由你点那个按钮决定。
+
+---
+
+## 认识 MindFlow
+
+如果第一次接触，这里是最小必要的背景。
+
+### 它怎么做事
+
+每件事都叫一个 **Task**，Task 从开始到结束走完固定的一段路，不会跳步：
+
+| 阶段 | 在做什么 |
+|---|---|
+| 学习（先） | 先把以前沉淀的知识读一遍 |
+| 识别 | 搞清楚这个任务到底是什么 |
+| 分析 | 拆解成可执行的步骤 |
+| 规划 | 排出一个明确的执行计划 |
+| 执行 | 按计划一步步做 |
+| 反省 | 复盘：哪里做得好，哪里有坑 |
+| 学习（后） | 把值得留下的经验沉淀下来 |
+
+这条路径是固定的，这就是 MindFlow 和"随便问问 AI"的区别——它每次都会认真复盘和沉淀。
+
+### 三个层次
+
+- **Task** —— 一件事。你交给它一个任务，它就走完上面整条路
+- **Plan** —— 这个任务的执行计划。里面列出若干个 Step
+- **Step / 能力** —— 计划里的一步，调用某种能力去完成
+
+Studio 的任务详情里，「规划」那一栏展示的就是 Plan：每一步做什么、调用什么能力、现在做到哪了。
+
+### 两样会越用越值钱的东西
+
+**知识** —— 任务反省时如果有值得留下的经验，会经过一轮审核后存下来。以后的同类任务会先读到它。
+
+**能力** —— 反复用到的做法会慢慢固化成一个"能力组件"，下次直接调用。
+
+所以用得越久，它越懂你的标准。这也是要设 Soul 的原因——你得先告诉它什么算好。
+
+---
+
+## 为什么值得用
+
+普通用法里，AI 每次都是重新开始：你重新说明背景，它重新摸索，做完就散了。
+
+MindFlow 每一轮都会留下痕迹——反省写了什么、沉淀了什么、下次读到了什么。所以它是往上叠的，不是每次都归零。
+
+Studio 让这个过程可见：你能看到某个知识是从哪次任务沉淀下来的，某个能力被哪些任务反复用到。看不见的积累很难信任，看得见才用得放心。
+
+---
+
+## 卸载
 
 ```bash
 dsh plugin --profile <profile> remove mindflow-studio
 ```
 
-技能独立存在，卸载 Studio 不影响它；想单独卸技能就删掉 `~/.dsh/skills/mindflow` 这个链接。
+技能不受影响，终端里照样能跑。想彻底清掉技能，删掉 `~/.dsh/skills/mindflow` 这个链接即可。
 
-## 为什么技能是分开的
+---
 
-**Studio 是观察窗口，技能是干活的手。** 分工是清楚的：
+## 相关仓库
 
-| | 负责什么 | 能独立用吗 |
-|---|---|---|
-| `/mindflow` 技能 | 在任意目录跑完整流程 | 能，纯终端就能用 |
-| MindFlow Studio | 看进度、聊任务、看产物、改 Soul | 不能，它把任务交给技能去跑 |
-
-所以 Studio **不内置**一份技能副本（那样两份 SKILL.md 迟早不同步），
-而是检测 + 一键安装。装不装、什么时候装，由你点那个按钮决定，Studio 不会自己动手。
-
-## 它读哪个目录
-
-Studio 不猜路径，解析顺序和 MindFlow 协议完全一致：
-
-1. 环境变量 `MINDFLOW_RUNTIME_ROOT`
-2. `<协议仓库>/runtime/`（默认，即 `~/.mindflow/MindFlow/runtime`）
-3. 调用方显式指定
-
-想「一个项目一个运行态」，就给不同项目设不同的 `MINDFLOW_RUNTIME_ROOT`，
-Studio 会跟着切。每个任务解析出的实际路径记录在它的 `state.md §Runtime Root` 里。
-
-## 开发
-
-```bash
-npm run build          # 生成 lib/index.js（host）与 lib/client.js（面板）
-npm test               # 构建 + 10 个套件
-```
-
-`lib/` 下两个入口都是**构建产物**，改了 `src/` 必须重新 build——手写的入口曾经
-因为 import 路径指向错误目录，导致 DSH 静默跳过整个插件（没报错、没面板、路由全 404）。
-现在 `build-host.mjs` 会逐条校验 import 能否解析，路径错了构建直接失败。
-
-测试锁住的真实 bug：
-
-- `render-liveness.mjs` —— **stalled 判定**：文件说 running 但 agent 已死时必须显示 Stalled
-- `parse-state.mjs` —— `running` 被误当模板占位符、`learning-acquire` 导致阶段条全灰
-- `host.mjs` —— **路径穿越**：`taskId=../../../etc` 曾能读到运行态之外的文件
-- `markdown.mjs` —— XSS：产物里的 `<script>` 必须当文本、`javascript:` 链接不成为锚点
-
-## 结构
-
-```
-src/shared/parse-state.js    state.md → 结构化事实（前端与测试共用）
-src/host/
-  runtime-root.js            Runtime Root 解析、任务扫描、产物读取（含路径穿越防护）
-  soul.js                    Soul 读写的唯一写入点
-  knowledge.js               知识库只读列表
-  capabilities.js            能力只读列表
-  sessions.js                taskId → sessionId 绑定
-  task-launcher.js           表单转任务陈述、起会话、注入追问
-src/client/panel.js          面板（五视图 + 原生样式）
-lib/                         构建产物与 host 入口
-```
-
-## 三个核心能力
-
-**原生会话停靠** —— 任务详情右侧的对话区**就是该任务的 DSH 会话本身**。
-不重写聊天，而是量出面板里的占位盒，用 `position: fixed` 把宿主
-`[data-conversation-scroll]` 的父节点挪过去；元素不出现在 React 树里移动，
-面板关闭时原样式还原。所以你打字就是那个会话的正常一轮对话。
-
-**产物浏览** —— 点文件名即可预览。Markdown 用自建渲染器
-（标题/列表/代码块/表格/引用/行内样式），全程 `React.createElement`，
-没有 `dangerouslySetInnerHTML`，产物里的原始 HTML 只会当文本显示。
-
-**文件监视推送** —— `fs.watch` 监听 `tasks/`、`mind/`、`capabilities/`，
-变化后经 SSE 推到面板，延迟从最多 1.5s 降到接近即时。
-watcher 只当"触发器"用：收到事件就重读文件，所以漏一个事件最多晚一点，
-不会读错。流断了自动退回慢轮询。
-
-## Plan 展示
-
-`Plan` 是 Task 的核心产物——它定义 Step、每个 Step 调什么 Capability、
-能不能并行。`state.md` 只记录每步跑到哪了，所以把 Plan 读出来才能看懂进度。
-
-`SYSTEM.md §Runtime Roles` 的层级：
-`Task`（入口，`tasks/{task-id}/`）→ `Plan`（`plan.md`）→ `Step` → `Capability`。
-
-## 和另外两个仓库的关系
-
-```
-MindFlow（协议）          ← Studio 只读协议树的 SYSTEM.md / 模块 README
-  ├── /mindflow 技能      ← 在任意目录跑完整流程（同步仓库、Soul、Recovery、主流程）
-  └── MindFlow Studio     ← 这个插件：看进度、聊任务、看产物、改 Soul、看知识能力
-```
-
-- **协议**决定「怎么跑」：Studio 不重新实现任何规则，全部以同步下来的 `SYSTEM.md` 为准
-- **技能**决定「谁去跑」：一个 DSH 会话执行 `/mindflow <task>`
-- **Studio** 决定「你怎么看」：读同一个 Runtime Root，经会话通道下指令
-
-所以三者不重复：去掉技能，Studio 就没有东西可跑；去掉 Studio，技能照样在终端里工作。
+- [MindFlow](https://github.com/neil-wang-global/MindFlow) —— 系统本体与完整文档
+- [neil-skills](https://github.com/neil-wang-global/neil-skills) —— `/mindflow` 技能所在的仓库
 
 ## License
 
