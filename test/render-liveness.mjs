@@ -5,6 +5,11 @@ let mod = null
 globalThis.window = {
   __ModuleLoader__: { load: ({ factory }) => { mod = factory((n) => { if (n==='react') return React; throw new Error(n) }) } },
   setInterval: () => 0, clearInterval: () => {},
+  // the native seat docks the host conversation root; without a document it
+  // no-ops, but it still registers window listeners
+  addEventListener: () => {}, removeEventListener: () => {},
+  requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+  EventSource: undefined,
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // silence react's act() warning: this harness drives updates itself
@@ -26,7 +31,7 @@ function makeTask(overallStatus, live) {
   }
 }
 
-await import('/Users/neil/Workspace/mine_craft/mindflow-studio/src/client/panel.js')
+await import('../lib/client.js')
 let Panel = null
 mod.apply({ get:(n)=> n==='slots' ? { inject:(s,f)=>{f();return()=>{}}, register:(o,c)=>{ if(o.name==='main') Panel=c; return ()=>{} } } : undefined })
 

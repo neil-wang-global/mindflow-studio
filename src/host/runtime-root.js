@@ -112,14 +112,33 @@ export function listTasks(root) {
   return listTaskDirs(root).map((d) => readTask(root, d.name))
 }
 
+/** Refuse to ship a huge file to the browser; the panel can still show its size. */
+const MAX_ARTIFACT_BYTES = 512 * 1024
+
+/**
+ * Read one artifact for the preview pane.
+ *
+ * Containment is checked on the resolved path, so a crafted `relPath` cannot
+ * walk out of the task directory. The kind is reported so the viewer can pick a
+ * renderer instead of guessing from the text.
+ */
 export function readArtifact(root, taskId, relPath) {
   const base = path.join(root, 'tasks', taskId)
   const abs = path.resolve(base, relPath)
-  // containment check: a crafted relPath must not escape the task directory
   if (abs !== base && !abs.startsWith(base + path.sep)) return { ok: false, error: 'path escapes task directory' }
+
+  const st = statSafe(abs)
+  if (st === null || !st.isFile()) return { ok: false, error: 'not a file' }
+  if (st.size > MAX_ARTIFACT_BYTES) {
+    return { ok: false, error: `file is ${Math.round(st.size / 1024)}KB, above the ${MAX_ARTIFACT_BYTES / 1024}KB preview limit` }
+  }
+
   const text = readText(abs)
   if (text === null) return { ok: false, error: 'not readable' }
-  return { ok: true, path: relPath, content: text }
+
+  const ext = path.extname(abs).toLowerCase()
+  const kind = ext === '.md' ? 'markdown' : ext === '.json' ? 'json' : 'text'
+  return { ok: true, path: relPath, kind, bytes: st.size, content: text }
 }
 
 export function runtimeInfo(explicit) {

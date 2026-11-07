@@ -17,7 +17,16 @@ window.__ModuleLoader__.load({
     const h = React.createElement
 
     const API = '/mindflow'
-    const POLL_MS = 1500
+
+    /**
+     * Host services, resolved once in `apply`. The panel cannot reach the plugin
+     * context directly, so this is the handoff point; keeping it module-scoped
+     * also means the native seat can re-read it on every render.
+     */
+    const host = { sessions: null, useLive: null }
+
+    /** The seat component, created once with our React instance. */
+    let NativeSeat = null
 
     const PHASE_LABELS = {
       'learning-read': 'Learning',
@@ -229,93 +238,343 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function TaskDetail({ task }) {
-      if (!task) {
-        return h('div', { style: S.empty }, 'Select a task on the left, or create one to start a MindFlow run.')
-      }
-      const st = task.state || {}
-      // the host already attached liveness to the task; reading it here removes a
-      // prop that was easy to forget to pass
-      const status = statusOf(task, task.live)
+    // ── artifact preview ───────────────────────────────────────────────────
 
-      const row = (label, value) =>
-        h(
-          'div',
-          { style: { display: 'flex', gap: 10, padding: '5px 0', fontSize: 12 } },
-          h('span', { style: { width: 96, flex: '0 0 96px', color: 'var(--text-secondary, #71717a)' } }, label),
-          h('span', { style: { minWidth: 0, wordBreak: 'break-word' } }, value),
-        )
+    function ArtifactPane({ task, selected, onSelect }) {
+      const [content, setContent] = React.useState(null)
+      const [error, setError] = React.useState(null)
+      const renderMarkdown = React.useMemo(() => createMarkdownRenderer(React), [])
+
+      React.useEffect(() => {
+        if (!selected) {
+          setContent(null)
+          setError(null)
+          return undefined
+        }
+        let cancelled = false
+        setError(null)
+        getJson(`artifact?task=${encodeURIComponent(task.taskId)}&path=${encodeURIComponent(selected)}`)
+          .then((res) => {
+            if (cancelled) return
+            if (res.ok) setContent(res)
+            else {
+              setContent(null)
+              setError(res.error || 'cannot read this file')
+            }
+          })
+          .catch((err) => {
+            if (!cancelled) setError(String(err.message || err))
+          })
+        return () => {
+          cancelled = true
+        }
+      }, [task.taskId, selected])
 
       return h(
         'div',
         { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
         h(
           'div',
-          { style: { padding: '12px 16px', borderBottom: '1px solid var(--border-default, #e4e4e7)' } },
+          { style: { padding: '8px 12px', borderBottom: '1px solid var(--border-default, #e4e4e7)', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #71717a)' } },
+          `Artifacts (${task.artifacts.length})`,
+        ),
+        h(
+          'div',
+          { style: { overflowY: 'auto', flex: '0 0 40%', minHeight: 60, borderBottom: '1px solid var(--border-default, #e4e4e7)' } },
+          task.artifacts.map((a) =>
+            h(
+              'button',
+              {
+                key: a.path,
+                onClick: () => onSelect(selected === a.path ? null : a.path),
+                title: a.path,
+                style: {
+                  display: 'block',
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: '5px 12px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  font: 'inherit',
+                  fontSize: 11.5,
+                  fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                  background: selected === a.path ? 'var(--bg-tertiary, #f4f4f5)' : 'transparent',
+                  color: 'inherit',
+                  fontWeight: selected === a.path ? 600 : 400,
+                  wordBreak: 'break-all',
+                },
+              },
+              a.path,
+            ),
+          ),
+        ),
+        h(
+          'div',
+          { style: { overflowY: 'auto', flex: 1, minHeight: 0, padding: '10px 14px' } },
+          error
+            ? h('div', { style: { fontSize: 12, color: 'var(--danger-strong, #b91c1c)' } }, error)
+            : !selected
+              ? h('div', { style: { fontSize: 12, color: 'var(--text-secondary, #71717a)' } }, 'Select a file to preview it.')
+              : !content
+                ? h('div', { style: { fontSize: 12, color: 'var(--text-secondary, #71717a)' } }, 'Loading…')
+                : content.kind === 'markdown'
+                  ? h('div', { style: { fontSize: 12.5 } }, renderMarkdown(content.content))
+                  : h(
+                      'pre',
+                      {
+                        style: {
+                          margin: 0,
+                          fontSize: 11.5,
+                          lineHeight: 1.55,
+                          fontFamily: 'var(--font-mono, ui-monospace, monospace)',
+                          whiteSpace: 'pre-wrap',
+                          wordBreak: 'break-word',
+                        },
+                      },
+                      content.content,
+                    ),
+        ),
+      )
+    }
+
+    // ── plan ───────────────────────────────────────────────────────────────
+
+    /**
+     * The Plan is the Task's central artifact: it defines the Steps, what each
+     * calls, and whether they may overlap. `state.md` only records how far each
+     * Step got, so showing the Plan is what makes the progress readable.
+     */
+    function PlanPane({ task, steps }) {
+      const [plan, setPlan] = React.useState(null)
+
+      React.useEffect(() => {
+        let cancelled = false
+        setPlan(null)
+        getJson(`plan?task=${encodeURIComponent(task.taskId)}`)
+          .then((res) => {
+            if (!cancelled && res.ok) setPlan(res)
+          })
+          .catch(() => {
+            /* the Plan is optional at this point of a run */
+          })
+        return () => {
+          cancelled = true
+        }
+      }, [task.taskId])
+
+      const statusOfStep = (index) => {
+        const found = (steps || []).find((s) => s.index === index)
+        return found ? found.status : 'pending'
+      }
+
+      const tone = (status) =>
+        status === 'completed'
+          ? 'done'
+          : status === 'running'
+            ? 'live'
+            : status === 'failed' || status === 'blocked'
+              ? 'bad'
+              : 'idle'
+
+      if (!plan) {
+        return h('div', { style: { fontSize: 12, color: 'var(--text-secondary, #71717a)' } }, 'Loading plan…')
+      }
+
+      if (!plan.exists || !plan.steps || plan.steps.length === 0) {
+        return h(
+          'div',
+          { style: { fontSize: 12, color: 'var(--text-secondary, #71717a)', lineHeight: 1.7, maxWidth: 460 } },
+          'No plan.md yet. Planning writes it after Recognition and Analysis, or a compact-mode task folds it into analysis-plan.md.',
+        )
+      }
+
+      return h(
+        'div',
+        null,
+        plan.objective
+          ? h('div', { style: { fontSize: 12.5, lineHeight: 1.6, marginBottom: 10 } }, plan.objective)
+          : null,
+        plan.parallel
+          ? h('div', { style: { marginBottom: 8 } }, badge('Parallel steps', 'warn'))
+          : null,
+        plan.steps.map((step) => {
+          const status = statusOfStep(step.index)
+          return h(
+            'div',
+            {
+              key: step.index,
+              style: {
+                padding: '8px 10px',
+                marginBottom: 6,
+                borderRadius: 6,
+                border: '1px solid var(--border-default, #e4e4e7)',
+                background: 'var(--bg-secondary, #fff)',
+              },
+            },
+            h(
+              'div',
+              { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' } },
+              h('span', { style: { fontSize: 12, fontWeight: 600 } }, `Step ${step.index}`),
+              badge(status, tone(status)),
+              step.capability ? h('span', { style: { fontSize: 11, color: 'var(--text-secondary, #71717a)', fontFamily: 'var(--font-mono, ui-monospace, monospace)' } }, String(step.capability)) : null,
+              step.dispatchMode && !/^sequential$/i.test(String(step.dispatchMode))
+                ? badge(String(step.dispatchMode), 'warn')
+                : null,
+            ),
+            step.instructions ? h('div', { style: { fontSize: 11.5, color: 'var(--text-secondary, #71717a)', lineHeight: 1.5 } }, String(step.instructions)) : null,
+          )
+        }),
+      )
+    }
+
+    // ── task detail ────────────────────────────────────────────────────────
+
+    function TaskDetail({ task, sessionId }) {
+      const [tab, setTab] = React.useState('plan')
+      const [artifact, setArtifact] = React.useState(null)
+      const [sessions] = React.useState(() => {
+        // the host service is only reachable through the plugin context, which the
+        // panel receives later; resolved lazily in the seat
+        return null
+      })
+
+      if (!task) {
+        return h('div', { style: S.empty }, 'Select a task on the left, or create one to start a MindFlow run.')
+      }
+
+      const st = task.state || {}
+      const status = statusOf(task, task.live)
+
+      const row = (label, value) =>
+        h(
+          'div',
+          { style: { display: 'flex', gap: 10, padding: '3px 0', fontSize: 12 } },
+          h('span', { style: { width: 100, flex: '0 0 100px', color: 'var(--text-secondary, #71717a)' } }, label),
+          h('span', { style: { minWidth: 0, wordBreak: 'break-word' } }, value),
+        )
+
+      return h(
+        'div',
+        { style: { display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 } },
+        // header: identity, status, phase trail
+        h(
+          'div',
+          { style: { padding: '10px 16px', borderBottom: '1px solid var(--border-default, #e4e4e7)' } },
           h(
             'div',
             { style: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 } },
             h('strong', { style: { fontSize: 14 } }, task.taskId),
             badge(status.text, status.tone),
+            task.live && task.live.sessionId ? badge('session', 'idle') : null,
           ),
           h(PhaseTrail, { trail: st.trail, phaseRaw: st.phaseRaw }),
         ),
+        // body: left = plan/artifacts, right = talk
         h(
           'div',
-          { style: { padding: '10px 16px', overflowY: 'auto', flex: 1, minHeight: 0 } },
-          row('Runtime Root', st.runtimeRoot || '—'),
-          row('Current Step', st.currentStep || '—'),
-          row('Knowledge', st.knowledgeOutcome || '—'),
-          row('Last Failure', st.lastFailure || 'none'),
-          st.retryCount ? row('Retries', String(st.retryCount)) : null,
-          st.steps && st.steps.length > 0
-            ? h(
-                'div',
-                { style: { marginTop: 12 } },
-                h('div', { style: { fontSize: 12, color: 'var(--text-secondary, #71717a)', marginBottom: 6 } }, 'Steps'),
+          { style: { display: 'flex', flex: 1, minHeight: 0 } },
+          h(
+            'div',
+            { style: { flex: '0 0 44%', minWidth: 260, display: 'flex', flexDirection: 'column', minHeight: 0, borderRight: '1px solid var(--border-default, #e4e4e7)' } },
+            h(
+              'div',
+              { style: { display: 'flex', gap: 4, padding: '8px 12px', borderBottom: '1px solid var(--border-default, #e4e4e7)' } },
+              ...[
+                ['plan', 'Plan'],
+                ['artifacts', 'Artifacts'],
+                ['state', 'State'],
+              ].map(([key, label]) =>
                 h(
-                  'div',
-                  { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
-                  st.steps.map((s) =>
-                    h(
-                      'span',
-                      {
-                        key: s.index,
-                        style: {
-                          fontSize: 11,
-                          padding: '2px 7px',
-                          borderRadius: 4,
-                          border: '1px solid var(--border-default, #e4e4e7)',
-                          background:
-                            s.status === 'completed'
-                              ? 'var(--success-subtle, #f0fdf4)'
-                              : s.status === 'running'
-                                ? 'var(--accent-subtle, #eff6ff)'
-                                : s.status === 'failed' || s.status === 'blocked'
-                                  ? 'var(--danger-subtle, #fef2f2)'
-                                  : 'transparent',
-                        },
-                      },
-                      `Step ${s.index}: ${s.status}`,
+                  'button',
+                  {
+                    key,
+                    onClick: () => setTab(key),
+                    style: {
+                      padding: '3px 10px',
+                      fontSize: 11.5,
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      font: 'inherit',
+                      border: '1px solid',
+                      borderColor: tab === key ? 'var(--border-strong, #d4d4d8)' : 'transparent',
+                      background: tab === key ? 'var(--bg-tertiary, #f4f4f5)' : 'transparent',
+                      color: 'inherit',
+                      fontWeight: tab === key ? 600 : 400,
+                    },
+                  },
+                  label,
+                ),
+              ),
+            ),
+            h(
+              'div',
+              { style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' } },
+              tab === 'plan'
+                ? h('div', { style: { padding: '10px 14px', overflowY: 'auto', flex: 1, minHeight: 0 } }, h(PlanPane, { task, steps: st.steps }))
+                : tab === 'artifacts'
+                  ? h(ArtifactPane, { task, selected: artifact, onSelect: setArtifact })
+                  : h(
+                      'div',
+                      { style: { padding: '10px 14px', overflowY: 'auto', flex: 1, minHeight: 0 } },
+                      row('Runtime Root', st.runtimeRoot || '—'),
+                      row('Current Step', st.currentStep || '—'),
+                      row('Knowledge', st.knowledgeOutcome || '—'),
+                      row('Last Failure', st.lastFailure || 'none'),
+                      st.retryCount ? row('Retries', String(st.retryCount)) : null,
+                      st.steps && st.steps.length > 0
+                        ? h(
+                            'div',
+                            { style: { marginTop: 10 } },
+                            h('div', { style: { fontSize: 11.5, color: 'var(--text-secondary, #71717a)', marginBottom: 6 } }, 'Step Status Map'),
+                            h(
+                              'div',
+                              { style: { display: 'flex', flexWrap: 'wrap', gap: 5 } },
+                              st.steps.map((s) =>
+                                h(
+                                  'span',
+                                  {
+                                    key: s.index,
+                                    style: {
+                                      fontSize: 11,
+                                      padding: '2px 7px',
+                                      borderRadius: 4,
+                                      border: '1px solid var(--border-default, #e4e4e7)',
+                                      background:
+                                        s.status === 'completed'
+                                          ? 'var(--success-subtle, #f0fdf4)'
+                                          : s.status === 'running'
+                                            ? 'var(--accent-subtle, #eff6ff)'
+                                            : s.status === 'failed' || s.status === 'blocked'
+                                              ? 'var(--danger-subtle, #fef2f2)'
+                                              : 'transparent',
+                                    },
+                                  },
+                                  `Step ${s.index}: ${s.status}`,
+                                ),
+                              ),
+                            ),
+                          )
+                        : null,
                     ),
-                  ),
-                ),
-              )
-            : null,
-          task.artifacts && task.artifacts.length > 0
-            ? h(
-                'div',
-                { style: { marginTop: 14 } },
-                h('div', { style: { fontSize: 12, color: 'var(--text-secondary, #71717a)', marginBottom: 6 } }, `Artifacts (${task.artifacts.length})`),
-                h(
+            ),
+          ),
+          // right: the task's own DSH conversation, docked rather than rebuilt
+          h(
+            'div',
+            { style: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', minHeight: 0 } },
+            h(
+              'div',
+              { style: { padding: '8px 12px', borderBottom: '1px solid var(--border-default, #e4e4e7)', fontSize: 11.5, fontWeight: 600, color: 'var(--text-secondary, #71717a)' } },
+              'Conversation',
+            ),
+            !sessionId
+              ? h(
                   'div',
-                  { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-                  task.artifacts.map((a) =>
-                    h('div', { key: a.path, style: { fontSize: 12, fontFamily: 'var(--font-mono, ui-monospace, monospace)' } }, a.path),
-                  ),
-                ),
-              )
-            : null,
+                  { style: { padding: 16, fontSize: 12, color: 'var(--text-secondary, #71717a)', lineHeight: 1.7 } },
+                  'This task has no bound session yet. Start it from New task, or run /mindflow for it.',
+                )
+              : h(NativeSeat, { sessions, sessionId, active: true }),
+          ),
         ),
       )
     }
@@ -790,27 +1049,64 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         let cancelled = false
-        let timer = null
+        let stream = null
+        let poll = null
 
-        async function tick() {
-          try {
-            const data = await getJson('tasks')
-            if (cancelled) return
-            setRuntime(data.runtime || null)
-            setTasks(data.tasks || [])
-            setError(null)
-          } catch (err) {
-            if (!cancelled) setError(String(err.message || err))
-          } finally {
-            if (!cancelled) setLoading(false)
-          }
+        const apply = (data) => {
+          if (cancelled || !data) return
+          setRuntime(data.runtime || null)
+          setTasks(data.tasks || [])
+          setError(null)
+          setLoading(false)
         }
 
-        tick()
-        timer = window.setInterval(tick, POLL_MS)
+        // Push first. `state.md` changes are what the panel shows, so waiting a
+        // poll interval to notice them is exactly the lag this avoids.
+        if (typeof window.EventSource === 'function') {
+          stream = new window.EventSource(`${API}/events`)
+          stream.onmessage = (event) => {
+            try {
+              apply(JSON.parse(event.data))
+            } catch {
+              /* a partial frame is followed by a complete one */
+            }
+          }
+          // A dropped stream should not leave the panel frozen: fall back to a
+          // slow poll so the user still sees progress, just less promptly.
+          stream.onerror = () => {
+            if (poll !== null) return
+            poll = window.setInterval(async () => {
+              try {
+                apply(await getJson('tasks'))
+              } catch {
+                /* keep the last good snapshot */
+              }
+            }, 4000)
+          }
+        } else {
+          poll = window.setInterval(async () => {
+            try {
+              apply(await getJson('tasks'))
+            } catch (err) {
+              if (!cancelled) setError(String(err.message || err))
+            }
+          }, 1500)
+        }
+
+        // one immediate read so the first paint is not empty
+        getJson('tasks')
+          .then(apply)
+          .catch((err) => {
+            if (!cancelled) {
+              setError(String(err.message || err))
+              setLoading(false)
+            }
+          })
+
         return () => {
           cancelled = true
-          if (timer) window.clearInterval(timer)
+          if (stream) stream.close()
+          if (poll !== null) window.clearInterval(poll)
         }
       }, [reloadKey])
 
@@ -856,7 +1152,7 @@ window.__ModuleLoader__.load({
       } else if (view === 'capabilities') {
         body = h(CapabilitiesView)
       } else {
-        body = h(TaskDetail, { task: current })
+        body = h(TaskDetail, { task: current, sessionId: current && current.live ? current.live.sessionId : null })
       }
 
       // The task list belongs beside the task detail, not behind a second click:
@@ -927,9 +1223,33 @@ window.__ModuleLoader__.load({
       )
     }
 
+    /** Service lookup tolerant of the gated access some hosts use for ctx. */
+    function service(ctx, name) {
+      if (!ctx) return null
+      try {
+        if (ctx[name]) return ctx[name]
+      } catch {
+        /* gated property access */
+      }
+      if (typeof ctx.get === 'function') {
+        try {
+          return ctx.get(name) ?? null
+        } catch {
+          return null
+        }
+      }
+      return null
+    }
+
     function apply(ctx) {
       const slots = ctx.get('slots')
       if (slots === undefined) return
+
+      // The seat needs the host's session service to switch which conversation
+      // the docked surface shows.
+      host.sessions = service(ctx, 'sessions')
+      NativeSeat = createNativeSeat(React, h)
+
       const disposers = [
         slots.inject('main', () =>
           slots.register({ name: 'main', key: 'mindflow-studio', id: 'mindflow-studio', order: 62 }, Panel),
@@ -939,6 +1259,9 @@ window.__ModuleLoader__.load({
         ),
       ]
       return () => {
+        // the docked conversation is the host's element, still positioned over our
+        // panel box; leaving it there would cover the rest of the app
+        undockConversation()
         for (const dispose of disposers) dispose()
       }
     }

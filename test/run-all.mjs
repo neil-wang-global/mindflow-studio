@@ -9,7 +9,18 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
-const suites = ['parse-state.mjs', 'host.mjs', 'soul.mjs', 'launcher.mjs', 'render-tasks.mjs', 'render-liveness.mjs', 'render-views.mjs']
+const suites = [
+  'parse-state.mjs',
+  'plan.mjs',
+  'host.mjs',
+  'soul.mjs',
+  'launcher.mjs',
+  'watch.mjs',
+  'markdown.mjs',
+  'render-tasks.mjs',
+  'render-liveness.mjs',
+  'render-views.mjs',
+]
 
 let failed = 0
 for (const name of suites) {

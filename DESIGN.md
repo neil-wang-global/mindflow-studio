@@ -131,5 +131,30 @@ learning-read → recognition → analysis → planning
 
 - **P1** 骨架：面板壳 + Runtime Root 解析 + 任务列表 + `state.md` 解析 + 阶段条
 - **P2** 沟通：原生会话停靠 + 提问注入 + 新建任务（起会话）
-- **P3** 展示：知识库按 Type 分组 + 能力按 Status 分组 + 产物预览
+- **P3** 展示：知识库按 Type 分组 + 能力按 `cu-*.md` 分组 + 产物预览
 - **P4** Soul 表单编辑 + 文件监视推送（替代轮询）
+
+## 实施状态
+
+| 项 | 状态 |
+|---|---|
+| P1 骨架（面板壳 / Runtime Root / 任务列表 / state.md 解析 / 阶段条） | ✅ |
+| P2 提问注入接口 + 新建任务起会话 | ✅ |
+| P2 原生会话停靠 | ✅ 宿主 ConversationRoot 视觉停靠 |
+| P3 知识按 Type / 能力按 cu 分组 | ✅ |
+| P3 产物预览（Markdown 渲染） | ✅ 自建渲染器，无 innerHTML |
+| P4 Soul 表单编辑 | ✅ |
+| P4 文件监视推送（SSE） | ✅ 带轮询兜底 |
+| **新增：Plan 展示** | ✅ 解析 plan.md 的 Step |
+
+### Task 与 Plan 的层级（核对协议后的结论）
+
+```
+Task                        ← 入口单位，tasks/{task-id}/
+ └─ Plan                    ← Task 内 Planning 的产物（plan.md）
+     └─ Step                ← Plan 内的最小执行单位
+```
+
+`SYSTEM.md §Runtime Roles` 原文：`Mind: drives TASK through all stages`、
+`Plan: formal OUTPUT of Planning`、`Step: smallest execution unit inside Plan`。
+所以导航一级用 Task 是正确的，Plan 是 Task 详情里的一层。

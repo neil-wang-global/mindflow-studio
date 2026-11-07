@@ -100,12 +100,29 @@ src/client/panel.js          面板（五视图 + 原生样式）
 lib/                         构建产物与 host 入口
 ```
 
-## 尚未实现
+## 三个核心能力
 
-- **原生会话停靠**：pomasa-studio 用 `position: fixed` 把宿主 `ConversationRoot` 停靠进面板，
-  Studio 目前只有"注入追问"的数据接口（`POST /mindflow/task.interject`），尚未把对话区画进面板。
-- **文件监视推送**：现在 1.5s 轮询任务列表；数据量大时应换成 SSE。
-- **产物预览**：只列文件名，未渲染 Markdown。
+**原生会话停靠** —— 任务详情右侧的对话区**就是该任务的 DSH 会话本身**。
+不重写聊天，而是量出面板里的占位盒，用 `position: fixed` 把宿主
+`[data-conversation-scroll]` 的父节点挪过去；元素不出现在 React 树里移动，
+面板关闭时原样式还原。所以你打字就是那个会话的正常一轮对话。
+
+**产物浏览** —— 点文件名即可预览。Markdown 用自建渲染器
+（标题/列表/代码块/表格/引用/行内样式），全程 `React.createElement`，
+没有 `dangerouslySetInnerHTML`，产物里的原始 HTML 只会当文本显示。
+
+**文件监视推送** —— `fs.watch` 监听 `tasks/`、`mind/`、`capabilities/`，
+变化后经 SSE 推到面板，延迟从最多 1.5s 降到接近即时。
+watcher 只当"触发器"用：收到事件就重读文件，所以漏一个事件最多晚一点，
+不会读错。流断了自动退回慢轮询。
+
+## Plan 展示
+
+`Plan` 是 Task 的核心产物——它定义 Step、每个 Step 调什么 Capability、
+能不能并行。`state.md` 只记录每步跑到哪了，所以把 Plan 读出来才能看懂进度。
+
+`SYSTEM.md §Runtime Roles` 的层级：
+`Task`（入口，`tasks/{task-id}/`）→ `Plan`（`plan.md`）→ `Step` → `Capability`。
 
 ## License
 

@@ -6,6 +6,11 @@ let mod = null
 globalThis.window = {
   __ModuleLoader__: { load: ({ factory }) => { mod = factory((n) => { if (n === 'react') return React; throw new Error(n) }) } },
   setInterval: () => 0, clearInterval: () => {},
+  // the native seat docks the host conversation root; without a document it
+  // no-ops, but it still registers window listeners
+  addEventListener: () => {}, removeEventListener: () => {},
+  requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+  EventSource: undefined,
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // silence react's act() warning: this harness drives updates itself
@@ -35,9 +40,20 @@ const TASKS = {
     live: { sessionId: 'sess-1', known: true, alive: true, status: 'running' },
   }],
 }
-globalThis.fetch = async () => ({ ok: true, json: async () => TASKS })
+const PLAN = {
+  ok: true,
+  exists: true,
+  taskId: '20261107-demo-task',
+  objective: 'produce the deliverable',
+  steps: [{ index: 1, capability: 'cap-verification', dispatchMode: 'sequential', instructions: 'write the deliverable' }],
+}
 
-await import('/Users/neil/Workspace/mine_craft/mindflow-studio/src/client/panel.js')
+globalThis.fetch = async (url) => {
+  const path = String(url).split('?')[0]
+  return { ok: true, json: async () => (path.endsWith('/mindflow/plan') ? PLAN : TASKS) }
+}
+
+await import('../lib/client.js')
 let Panel = null
 mod.apply({ get: (n) => n === 'slots' ? {
   inject: (s,f)=>{f();return ()=>{}},
@@ -67,9 +83,9 @@ const checks = {
   '阶段 Execution': joined.includes('Execution'),
   '状态 Running': joined.includes('Running'),
   'Runtime Root 路径': joined.includes('/Users/neil/.mindflow/MindFlow/runtime'),
-  'Step 1: completed': joined.includes('Step 1: completed'),
-  'Step 2: running': joined.includes('Step 2: running'),
-  '产物 report.md': joined.includes('_output/report.md'),
+  'Plan 展示 Step 状态': joined.includes('Step 1') && joined.includes('completed'),
+  'Plan 展示 Capability': joined.includes('cap-verification'),
+  'Conversation 区就位': joined.includes('Conversation'),
   '导航齐全': ['Soul','Knowledge','Capabilities'].every(x=>joined.includes(x)),
   '脱离 loading': !joined.includes('Loading MindFlow'),
 }

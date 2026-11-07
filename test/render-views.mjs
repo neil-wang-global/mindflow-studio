@@ -5,12 +5,17 @@ let mod = null
 globalThis.window = {
   __ModuleLoader__: { load: ({ factory }) => { mod = factory((n)=>{ if(n==='react') return React; throw new Error(n) }) } },
   setInterval: () => 0, clearInterval: () => {},
+  // the native seat docks the host conversation root; without a document it
+  // no-ops, but it still registers window listeners
+  addEventListener: () => {}, removeEventListener: () => {},
+  requestAnimationFrame: () => 0, cancelAnimationFrame: () => {},
+  EventSource: undefined,
 }
 globalThis.IS_REACT_ACT_ENVIRONMENT = true
 // silence react's act() warning: this harness drives updates itself
 const realError = console.error
 console.error = (...a) => { if (String(a[0]).includes('act(')) return; realError(...a) }
-await import('/Users/neil/Workspace/mine_craft/mindflow-studio/src/client/panel.js')
+await import('../lib/client.js')
 let Panel=null
 mod.apply({ get:(n)=> n==='slots' ? { inject:(s,f)=>{f();return()=>{}}, register:(o,c)=>{ if(o.name==='main') Panel=c; return ()=>{} } } : undefined })
 
@@ -47,8 +52,14 @@ async function render(viewLabel) {
   const texts=[]
   ;(function walk(n){ if(n==null)return; if(typeof n==='string'){texts.push(n);return} if(Array.isArray(n)){n.forEach(walk);return} if(n.children)n.children.forEach(walk) })(tree.toJSON())
   const t = texts.join(' | ')
+  // textarea/input values are props, not text nodes: collect them so form views
+  // can be asserted on what the user would actually see in the field
+  const fieldValues = []
+  ;(function walk(n){ if(!n||typeof n!=='object') return; if(Array.isArray(n)){n.forEach(walk);return}
+    if((n.type==='textarea'||n.type==='input') && n.props && typeof n.props.value==='string') fieldValues.push(n.props.value)
+    if(n.children)n.children.forEach(walk) })(tree.toJSON())
   tree.unmount()
-  return { t, clicked: !!btn }
+  return { t, clicked: !!btn, fields: fieldValues }
 }
 
 let r = await render('Tasks')
@@ -57,7 +68,7 @@ console.log('Tasks 视图:', r.t.includes('t1')?'✅ 任务显示':'❌', '| 状
 r = await render('Soul')
 console.log('Soul 视图:', r.clicked?'✅ 可切换':'❌ 找不到入口')
 console.log('  字段完整:', ['Identity','Mission','Values','Taboos','Methodology Preference','Decision Style','Aesthetic Preference','Learning Policy'].every(x=>r.t.includes(x))?'✅':'❌')
-console.log('  显示已填值:', r.t.includes('务实的研究者')?'✅':'❌')
+console.log('  显示已填值:', r.fields.includes('务实的研究者')?'✅':'❌')
 console.log('  未配置徽标:', r.t.includes('Not configured')?'✅':'❌')
 
 r = await render('Knowledge')
