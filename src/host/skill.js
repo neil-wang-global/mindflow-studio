@@ -46,6 +46,9 @@ function runtimeSkillDirs() {
   return [
     { runtime: 'DSH', dir: path.join(home, '.dsh', 'skills') },
     { runtime: 'OpenCode', dir: path.join(home, '.config', 'opencode', 'skills') },
+    // Hermes nests skills one level down by category, so the link lives at
+    // <category>/<name>; check the categories it uses for workflow skills.
+    { runtime: 'Hermes', dir: path.join(home, '.hermes', 'skills', 'productivity') },
   ]
 }
 

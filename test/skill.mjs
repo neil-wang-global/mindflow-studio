@@ -54,6 +54,7 @@ check('skillStatus reports every runtime it knows about', () => {
   const names = s.links.map((l) => l.runtime)
   assert.ok(names.includes('DSH'), 'DSH runs the tasks, so it must be reported')
   assert.ok(names.includes('OpenCode'), 'OpenCode is a supported runtime')
+  assert.ok(names.includes('Hermes'), 'Hermes is a supported runtime')
   for (const l of s.links) {
     assert.equal(typeof l.linked, 'boolean')
     assert.ok(l.entry.endsWith('mindflow'))
