@@ -14,9 +14,43 @@ import path from 'node:path'
 import os from 'node:os'
 import { parseState } from '../shared/parse-state.js'
 
-/** Where the MindFlow protocol clone lives, per the /mindflow skill. */
-export function protocolRoot() {
+/** The conventional location, per the /mindflow skill. */
+export function defaultProtocolRoot() {
   return path.join(os.homedir(), '.mindflow', 'MindFlow')
+}
+
+/**
+ * The clone Studio itself installed, if it made one.
+ *
+ * The skill ships inside the protocol repository, so an install performed by
+ * Studio leaves a complete protocol tree here. Reading that tree rather than
+ * insisting on the conventional path avoids the confusing state where the skill
+ * is installed from one checkout while Studio reports on another.
+ */
+function studioManagedProtocolRoot() {
+  return path.join(os.homedir(), '.mindflow', 'studio', 'skills', 'MindFlow')
+}
+
+function isProtocolTree(dir) {
+  try {
+    return fs.statSync(path.join(dir, 'SYSTEM.md')).isFile()
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Where the protocol lives, most specific first:
+ *   1. the tree Studio cloned, when it has one
+ *   2. `~/.mindflow/MindFlow`, the location the skill documents
+ *
+ * Both are full protocol checkouts, so either is valid; preferring the
+ * Studio-managed one keeps the panel and the installed skill on the same tree.
+ */
+export function protocolRoot() {
+  const managed = studioManagedProtocolRoot()
+  if (isProtocolTree(managed)) return managed
+  return defaultProtocolRoot()
 }
 
 export function resolveRuntimeRoot(explicit) {

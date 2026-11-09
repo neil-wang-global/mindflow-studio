@@ -143,8 +143,7 @@ dsh plugin --profile <profile> remove mindflow-studio
 
 ## 相关仓库
 
-- [MindFlow](https://github.com/neil-wang-global/MindFlow) —— 系统本体与完整文档
-- [neil-skills](https://github.com/neil-wang-global/neil-skills) —— `/mindflow` 技能所在的仓库
+- [MindFlow](https://github.com/neil-wang-global/MindFlow) —— 系统本体、完整文档，以及 `/mindflow` 技能（技能随框架一起发布）
 
 ## License
 

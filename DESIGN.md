@@ -153,7 +153,9 @@ learning-read → recognition → analysis → planning
 Studio 不内置技能副本（两份 SKILL.md 必然不同步），而是**检测 + 由用户点按钮安装**：
 
 - 检测 `~/.dsh/skills/mindflow` 与 `~/.agents/skills/mindflow`，跟随符号链接判断 `SKILL.md` 可达
-- 安装 = 浅 clone 到 `~/.mindflow/studio/skills/neil-skills` + 链进技能根
+- 安装 = 浅 clone **MindFlow 仓库**到 `~/.mindflow/studio/skills/MindFlow` + 链进技能根
+  - 技能随协议仓库发布（`skills/mindflow/`），所以一次 clone 同时得到技能与协议
+  - 因此 `protocolRoot()` 优先用这份 clone，避免「技能来自 A、面板读 B」的分裂
 - **不由 Studio 自动安装**：一个静默写技能目录的插件，用户没法看见也没法归因
 - 已验证：技能目录是实时扫描的，装完立即出现在 skill 列表里，无需重启
 

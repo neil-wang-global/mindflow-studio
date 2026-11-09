@@ -21,7 +21,10 @@ import os from 'node:os'
 import { execFile } from 'node:child_process'
 
 const SKILL_NAME = 'mindflow'
-const REPO_URL = 'https://github.com/neil-wang-global/neil-skills.git'
+// The skill ships inside the protocol repository, so one clone provides both the
+// skill and the protocol it executes — which also means the skill's own "find
+// the protocol beside me" rule resolves to this clone.
+const REPO_URL = 'https://github.com/neil-wang-global/MindFlow.git'
 const REPO_SUBDIR = path.join('skills', SKILL_NAME)
 
 /**
@@ -42,7 +45,7 @@ function studioSkillsDir() {
 }
 
 function cloneDir() {
-  return path.join(studioSkillsDir(), 'neil-skills')
+  return path.join(studioSkillsDir(), 'MindFlow')
 }
 
 function run(cmd, args, cwd) {
