@@ -642,12 +642,42 @@ window.__ModuleLoader__.load({
      */
     function SkillBanner({ status, onInstall, busy, error, note }) {
       if (!status) return null
-      if (status.installed) {
+
+      // One skill, several runtimes: show each, because a skill installed but not
+      // linked into the runtime that runs it is the failure this banner exists for.
+      const links = status.links || []
+      const missing = links.filter((l) => !l.linked)
+
+      if (status.installed && missing.length === 0) {
         return h(
           'div',
           { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '7px 16px', borderBottom: '1px solid var(--border-default, #e4e4e7)', fontSize: 11.5, color: 'var(--text-secondary, #71717a)' } },
           badge('mindflow skill', 'done'),
           h('span', null, status.path),
+          h('span', { style: { marginLeft: 'auto' } }, links.map((l) => l.runtime).join(' · ')),
+        )
+      }
+
+      if (status.installed) {
+        return h(
+          'div',
+          {
+            style: {
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              padding: '10px 16px', borderBottom: '1px solid var(--border-default, #e4e4e7)',
+              background: 'var(--warning-subtle, #fffbeb)', fontSize: 12,
+            },
+          },
+          h('span', { style: { flex: 1, minWidth: 220, lineHeight: 1.55 } },
+            h('strong', null, 'The skill is installed but not linked into '),
+            missing.map((l) => l.runtime).join(', '),
+            '. Tasks run in those runtimes will not find it.',
+          ),
+          busy
+            ? h('span', { style: { fontSize: 11.5, color: 'var(--text-secondary, #71717a)' } }, 'Linking…')
+            : h(Btn, { onClick: onInstall, tone: 'primary' }, 'Link it'),
+          error ? h('span', { style: { width: '100%', fontSize: 11.5, color: 'var(--danger-strong, #b91c1c)' } }, error) : null,
+          note ? h('span', { style: { width: '100%', fontSize: 11.5, color: 'var(--success-strong, #15803d)' } }, note) : null,
         )
       }
 
@@ -667,11 +697,13 @@ window.__ModuleLoader__.load({
         },
         h('span', { style: { flex: 1, minWidth: 220, lineHeight: 1.55 } },
           h('strong', null, 'The /mindflow skill is not installed. '),
-          'Tasks are run by prompting that skill, so nothing will start until it exists. Installing clones it and links it into your skill directory.',
+          'Tasks are run by prompting that skill, so nothing will start until it exists. Installing puts one copy in your skill store and links it into ',
+          links.map((l) => l.runtime).join(' and ') || 'the runtimes',
+          '.',
         ),
         busy
           ? h('span', { style: { fontSize: 11.5, color: 'var(--text-secondary, #71717a)' } }, 'Installing…')
-          : h(Btn, { onClick: onInstall, disabled: !status.canInstall, tone: 'primary' }, status.canInstall ? 'Install skill' : 'No writable skill directory'),
+          : h(Btn, { onClick: onInstall, disabled: !status.canInstall, tone: 'primary' }, status.canInstall ? 'Install skill' : 'Skill store not writable'),
         error ? h('span', { style: { width: '100%', fontSize: 11.5, color: 'var(--danger-strong, #b91c1c)' } }, error) : null,
         note ? h('span', { style: { width: '100%', fontSize: 11.5, color: 'var(--success-strong, #15803d)' } }, note) : null,
       )
@@ -1172,7 +1204,13 @@ window.__ModuleLoader__.load({
         try {
           const res = await postJson('skill.install', {})
           if (res.ok) {
-            setInstallNote(res.alreadyInstalled ? 'Already installed.' : 'Installed. The skill is available now — no restart needed.')
+            const where = (res.linked || []).length > 0 ? ` Linked into ${(res.linked || []).join(', ')}.` : ''
+            const failed = (res.failedLinks || []).length > 0 ? ` Could not link ${ (res.failedLinks || []).map((f) => f.runtime).join(', ') }.` : ''
+            setInstallNote(
+              res.alreadyInstalled
+                ? `Already installed.${where}${failed}`
+                : `Installed.${where}${failed} No restart needed.`,
+            )
             loadSkill()
           } else {
             setInstallError(res.error || 'installation failed')

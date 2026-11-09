@@ -10,10 +10,10 @@
  * writes into the skill directory would be doing something the user cannot see
  * or attribute.
  *
- * Installation is a shallow clone into a Studio-owned directory plus one
- * symlink into a discovered skill root. A clone keeps the skill updatable with
- * `git pull`, and the symlink is what the runtime actually scans, so the layout
- * matches how every other skill on this machine is installed.
+ * The skill is kept once, in the shared skill store (`~/.cc-switch/skills`), and
+ * every runtime that uses it links to that one copy. Studio reports presence
+ * against the store rather than against any single runtime, and installs by
+ * copying into the store and linking, so the runtimes cannot drift apart.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -28,24 +28,49 @@ const REPO_URL = 'https://github.com/neil-wang-global/MindFlow.git'
 const REPO_SUBDIR = path.join('skills', SKILL_NAME)
 
 /**
- * Roots the DSH runtime scans for skills, most preferred first.
- *
- * `~/.dsh/skills` is DSH's own home; `~/.agents/skills` is the cross-runtime
- * alias. Both are scanned live, so an install here takes effect without a
- * restart.
+ * The shared skill store. Skills live here once and runtimes link to them, so a
+ * skill found here is the canonical copy.
  */
-function skillRoots() {
-  const home = os.homedir()
-  return [path.join(home, '.dsh', 'skills'), path.join(home, '.agents', 'skills')]
+function storeDir() {
+  return path.join(os.homedir(), '.cc-switch', 'skills')
 }
 
-/** Where Studio keeps its own clone, separate from the user's other checkouts. */
+/**
+ * Runtime skill directories, each scanned live at session start.
+ *
+ * DSH reads `~/.dsh/skills`; OpenCode reads `~/.config/opencode/skills`. Linking
+ * the store into both is what makes one skill available everywhere.
+ */
+function runtimeSkillDirs() {
+  const home = os.homedir()
+  return [
+    { runtime: 'DSH', dir: path.join(home, '.dsh', 'skills') },
+    { runtime: 'OpenCode', dir: path.join(home, '.config', 'opencode', 'skills') },
+  ]
+}
+
+/**
+ * Every place a skill may be found, the store first.
+ *
+ * Order matters: the store is the canonical copy, so a skill found there is
+ * reported as installed even if no runtime has linked it yet.
+ */
+function skillRoots() {
+  return [storeDir(), ...runtimeSkillDirs().map((r) => r.dir)]
+}
+
+/** Where Studio keeps its own protocol clone, for reading the runtime tree. */
 function studioSkillsDir() {
   return path.join(os.homedir(), '.mindflow', 'studio', 'skills')
 }
 
 function cloneDir() {
   return path.join(studioSkillsDir(), 'MindFlow')
+}
+
+/** The store entry Studio writes when installing. */
+function storeEntry() {
+  return path.join(storeDir(), SKILL_NAME)
 }
 
 function run(cmd, args, cwd) {
@@ -88,94 +113,151 @@ export function findSkill() {
 /** What the panel needs to render the state and decide what to offer. */
 export function skillStatus() {
   const found = findSkill()
-  if (found.installed) return { ...found, canInstall: false, reason: null }
 
-  // An install is only attempted where a skill root already exists or can be
-  // created; otherwise the button would promise something it cannot do.
-  const roots = skillRoots()
-  const writable = roots.filter((r) => {
+  // Report the runtimes that use this skill, so the panel can show a half-linked
+  // install rather than a bare "installed" that hides a runtime missing it.
+  const links = runtimeSkillDirs().map(({ runtime, dir }) => {
+    const entry = path.join(dir, SKILL_NAME)
+    let linked = false
     try {
-      if (fs.existsSync(r)) return fs.statSync(r).isDirectory()
-      fs.mkdirSync(r, { recursive: true })
-      return true
+      linked = fs.statSync(path.join(entry, 'SKILL.md')).isFile()
     } catch {
-      return false
+      linked = false
     }
+    return { runtime, dir, entry, linked }
   })
+
+  if (found.installed) {
+    return { ...found, canInstall: false, reason: null, links, needsLink: links.filter((l) => !l.linked) }
+  }
+
+  // An install needs the store to be writable; the runtimes can be created.
+  let storeWritable = false
+  try {
+    fs.mkdirSync(storeDir(), { recursive: true })
+    storeWritable = fs.statSync(storeDir()).isDirectory()
+  } catch {
+    storeWritable = false
+  }
 
   return {
     ...found,
-    canInstall: writable.length > 0,
-    reason: writable.length > 0 ? null : 'no writable skill directory found',
-    plannedRoot: writable[0] ?? null,
+    canInstall: storeWritable,
+    reason: storeWritable ? null : `cannot write to ${storeDir()}`,
+    plannedRoot: storeWritable ? storeEntry() : null,
     source: REPO_URL,
     cloneDir: cloneDir(),
+    links,
+    needsLink: [],
+  }
+}
+
+/** Copy a directory tree, skipping anything a vcs keeps. */
+function copyTree(from, to) {
+  fs.mkdirSync(to, { recursive: true })
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    if (entry.name === '.git') continue
+    const src = path.join(from, entry.name)
+    const dst = path.join(to, entry.name)
+    if (entry.isDirectory()) copyTree(src, dst)
+    else if (entry.isSymbolicLink()) fs.symlinkSync(fs.readlinkSync(src), dst)
+    else fs.copyFileSync(src, dst)
+  }
+}
+
+/** Point one runtime's skill directory at the store entry. */
+function linkInto(entry, target) {
+  try {
+    fs.mkdirSync(path.dirname(entry), { recursive: true })
+    fs.rmSync(entry, { force: true, recursive: false })
+    fs.symlinkSync(target, entry, 'dir')
+    return null
+  } catch (err) {
+    return err.message
   }
 }
 
 /**
- * Install the skill.
+ * Install the skill: fetch it, keep one copy in the store, link every runtime.
  *
- * Idempotent: a second call finds the existing clone, fast-forwards it, and
- * re-points the symlink. Failure reports the underlying command output rather
- * than a generic message, because `git` and `ln` failures are specific.
+ * Idempotent. A second call refreshes the store copy and re-points the links, so
+ * a half-finished install — store present but a runtime unlinked — repairs
+ * itself rather than needing to be undone first.
  */
 export async function installSkill() {
   const existing = findSkill()
-  if (existing.installed) return { ok: true, alreadyInstalled: true, ...existing }
+  const alreadyInStore = existing.installed && existing.root === storeDir()
 
-  const target = cloneDir()
-  fs.mkdirSync(studioSkillsDir(), { recursive: true })
+  if (!alreadyInStore) {
+    const target = cloneDir()
+    fs.mkdirSync(studioSkillsDir(), { recursive: true })
 
-  if (!fs.existsSync(path.join(target, '.git'))) {
-    // shallow: the skill lives in one commit's tree, and a full history only
-    // slows the first run down
-    const cloned = await run('git', ['clone', '--depth', '1', REPO_URL, target], studioSkillsDir())
-    if (!cloned.ok) {
-      return { ok: false, error: `git clone failed: ${cloned.stderr.trim() || cloned.error}`, stage: 'clone' }
+    if (!fs.existsSync(path.join(target, '.git'))) {
+      // shallow: the skill lives in one commit's tree, and a full history only
+      // slows the first run down
+      const cloned = await run('git', ['clone', '--depth', '1', REPO_URL, target], studioSkillsDir())
+      if (!cloned.ok) {
+        return { ok: false, error: `git clone failed: ${cloned.stderr.trim() || cloned.error}`, stage: 'clone' }
+      }
+    } else {
+      const pulled = await run('git', ['-C', target, 'pull', '--ff-only', 'origin', 'main'], studioSkillsDir())
+      if (!pulled.ok) {
+        // a diverged clone is the user's to resolve; report it instead of nuking it
+        return { ok: false, error: `git pull failed: ${pulled.stderr.trim() || pulled.error}`, stage: 'pull' }
+      }
+    }
+
+    const source = path.join(target, REPO_SUBDIR)
+    if (!fs.existsSync(path.join(source, 'SKILL.md'))) {
+      return { ok: false, error: `clone succeeded but ${REPO_SUBDIR}/SKILL.md is missing`, stage: 'verify' }
+    }
+    if (!fs.existsSync(path.join(source, 'SYSTEM.md'))) {
+      return { ok: false, error: `${REPO_SUBDIR}/SYSTEM.md is missing; the skill ships the protocol with it`, stage: 'verify' }
+    }
+
+    // copy rather than link into the store: the store is the canonical copy, and
+    // a link back into a clone would tie it to this clone's lifetime
+    try {
+      fs.rmSync(storeEntry(), { recursive: true, force: true })
+      copyTree(source, storeEntry())
+    } catch (err) {
+      return { ok: false, error: `could not write ${storeEntry()}: ${err.message}`, stage: 'store' }
     }
   } else {
-    const pulled = await run('git', ['-C', target, 'pull', '--ff-only', 'origin', 'main'], studioSkillsDir())
-    if (!pulled.ok) {
-      // a diverged clone is the user's to resolve; report it instead of nuking it
-      return { ok: false, error: `git pull failed: ${pulled.stderr.trim() || pulled.error}`, stage: 'pull' }
+    // already stored: refresh in place from the clone, so calling this again
+    // updates rather than doing nothing
+    const target = cloneDir()
+    if (fs.existsSync(path.join(target, '.git'))) {
+      const pulled = await run('git', ['-C', target, 'pull', '--ff-only', 'origin', 'main'], studioSkillsDir())
+      if (pulled.ok) {
+        const source = path.join(target, REPO_SUBDIR)
+        if (fs.existsSync(path.join(source, 'SKILL.md'))) {
+          try {
+            fs.rmSync(storeEntry(), { recursive: true, force: true })
+            copyTree(source, storeEntry())
+          } catch (err) {
+            return { ok: false, error: `could not refresh ${storeEntry()}: ${err.message}`, stage: 'store' }
+          }
+        }
+      }
     }
   }
 
-  const source = path.join(target, REPO_SUBDIR)
-  if (!fs.existsSync(path.join(source, 'SKILL.md'))) {
-    return { ok: false, error: `clone succeeded but ${REPO_SUBDIR}/SKILL.md is missing`, stage: 'verify' }
-  }
-
-  const roots = skillRoots()
-  let linkRoot = null
-  for (const root of roots) {
-    try {
-      fs.mkdirSync(root, { recursive: true })
-      linkRoot = root
-      break
-    } catch {
-      /* try the next root */
-    }
-  }
-  if (linkRoot === null) return { ok: false, error: 'no writable skill directory', stage: 'link' }
-
-  const linkPath = path.join(linkRoot, SKILL_NAME)
-  try {
-    // replace a stale or broken entry rather than failing on EEXIST
-    try {
-      fs.rmSync(linkPath, { force: true, recursive: false })
-    } catch {
-      /* nothing to replace */
-    }
-    fs.symlinkSync(source, linkPath, 'dir')
-  } catch (err) {
-    return { ok: false, error: `could not link into ${linkRoot}: ${err.message}`, stage: 'link' }
+  // link every runtime that has (or can get) a skill directory
+  const linked = []
+  const failed = []
+  for (const { runtime, dir } of runtimeSkillDirs()) {
+    // only link where the runtime is actually in use; a missing runtime's config
+    // directory is not Studio's to create
+    if (!fs.existsSync(path.dirname(dir))) continue
+    const err = linkInto(path.join(dir, SKILL_NAME), storeEntry())
+    if (err === null) linked.push(runtime)
+    else failed.push({ runtime, error: err })
   }
 
   const verified = findSkill()
   if (!verified.installed) {
-    return { ok: false, error: 'link created but the skill is still not discoverable', stage: 'verify' }
+    return { ok: false, error: 'store written but the skill is still not discoverable', stage: 'verify' }
   }
-  return { ok: true, alreadyInstalled: false, ...verified }
+  return { ok: true, alreadyInstalled: alreadyInStore, ...verified, linked, failedLinks: failed }
 }

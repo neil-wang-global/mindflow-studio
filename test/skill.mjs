@@ -47,4 +47,37 @@ check('a directory without SKILL.md is not an installed skill', () => {
   fs.rmSync(fake, { recursive: true, force: true })
 })
 
+
+check('skillStatus reports every runtime it knows about', () => {
+  const s = skillStatus()
+  assert.ok(Array.isArray(s.links), 'links must always be present for the banner')
+  const names = s.links.map((l) => l.runtime)
+  assert.ok(names.includes('DSH'), 'DSH runs the tasks, so it must be reported')
+  assert.ok(names.includes('OpenCode'), 'OpenCode is a supported runtime')
+  for (const l of s.links) {
+    assert.equal(typeof l.linked, 'boolean')
+    assert.ok(l.entry.endsWith('mindflow'))
+  }
+})
+
+check('an installed skill reports the unlinked runtimes rather than hiding them', () => {
+  const s = skillStatus()
+  if (!s.installed) return
+  // needsLink is what drives the "installed but not linked" banner state
+  assert.ok(Array.isArray(s.needsLink))
+  const unlinked = s.links.filter((l) => !l.linked).map((l) => l.runtime)
+  assert.deepEqual(s.needsLink.map((l) => l.runtime), unlinked)
+})
+
+check('the store is preferred as the canonical location', () => {
+  const s = skillStatus()
+  if (!s.installed) return
+  const home = os.homedir()
+  const store = path.join(home, '.cc-switch', 'skills')
+  // either it is in the store, or the store is absent and another root answered
+  if (fs.existsSync(store)) {
+    assert.equal(s.root, store, 'with a store present, that is the canonical copy')
+  }
+})
+
 console.log(`skill: ${n} checks passed`)
